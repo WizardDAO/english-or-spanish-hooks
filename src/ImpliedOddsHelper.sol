@@ -2,32 +2,56 @@
 pragma solidity ^0.8.0;
 
 import {MockOracle} from "./MockOracle.sol";
+import {ln, unwrap, wrap, UD60x18} from "@prb/math/src/UD60x18.sol";
+import {PoolKey} from "@pancakeswap/v4-core/src/types/PoolKey.sol";
+import {IBinFungiblePositionManager} from "@pancakeswap/v4-periphery/src/pool-bin/interfaces/IBinFungiblePositionManager.sol";
+import {SafeCast} from "@pancakeswap/v4-core/src/pool-bin/libraries/math/SafeCast.sol";
 
 /// @title Implied Odds Helper Contract
 /// @notice This contract calculates the implied odds for each round and determines the liquidity to be distributed in each pool
 contract ImpliedOddsHelper {
     /// @notice Oracle instance to fetch match data
     MockOracle public oracle;
+    uint256 private constant UNIT = 10 ** 18;
+    uint256 private constant baseId = 8388608;
 
     /// @notice Constructor to initialize the oracle instance
     /// @param oracleAddress The address of the MockOracle contract
-    constructor(address oracleAddress) {
-        oracle = MockOracle(oracleAddress);
+    constructor(MockOracle oracleAddress) {
+        oracle = oracleAddress;
+    }
+
+    /**
+     * @notice Calculates the activeId given a price.
+     * @param price The price for which to calculate the activeId (in 60.18-decimal fixed-point format).
+     * @return activeId The calculated activeId.
+     */
+    function getActiveIdFromPrice(uint256 price) public pure returns (uint24) {
+        require(price > 0, "Price must be greater than zero");
+
+        // Wrap the price as UD60x18
+        UD60x18 priceUD = wrap(price);
+
+        // Calculate the natural log of the price
+        UD60x18 lnPrice = ln(priceUD);
+
+        // Calculate the natural log of 1.01
+        UD60x18 lnBase = ln(wrap((101 * UNIT) / 100)); // ln(1.01)
+
+        // Calculate activeId using the formula: activeId = ln(price) / ln(1.01) + baseId
+        uint24 activeId = uint24((unwrap(lnPrice) * UNIT) / unwrap(lnBase) + baseId);
+
+        return activeId;
     }
 
     /// @notice Calculates the new liquidity distribution based on the current total liquidity and match data
-    /// @param currentTotalLiquidity The total liquidity available for distribution
-    /// @return englandLiquidity The calculated liquidity for England
-    /// @return spainLiquidity The calculated liquidity for Spain
-    /// @return drawLiquidity The calculated liquidity for a draw
-    function calculateNewLiquidity(
-        uint256 currentTotalLiquidity
-    ) external view returns (uint256 englandLiquidity, uint256 spainLiquidity, uint256 drawLiquidity) {
+    /// @return englandBin The calculated bin for England
+    /// @return spainBin The calculated bin for Spain
+    /// @return drawBin The calculated bin for a draw
+    function calculateNewBins() public view returns (uint24 englandBin, uint24 spainBin, uint24 drawBin) {
         // Fetch the latest match data from the oracle
         MockOracle.MatchData memory matchData = oracle.getMatchData(type(uint256).max);
 
-        // Base liquidity amount (example value)
-        uint256 baseLiquidity = currentTotalLiquidity;
         // Calculate odds based on goals, ensuring they stay within valid bounds
         int256 englandOdds = int256(35 + (matchData.goalsEngland * 15) - (matchData.goalsSpain * 15));
         int256 spainOdds = int256(35 + (matchData.goalsSpain * 15) - (matchData.goalsEngland * 15));
@@ -41,9 +65,14 @@ contract ImpliedOddsHelper {
         uint256 totalOdds = uint256(englandOdds + spainOdds + drawOdds);
         require(totalOdds > 0, "Total odds must be greater than 0");
 
-        // Calculate liquidity based on odds and normalize them
-        englandLiquidity = (baseLiquidity * uint256(englandOdds)) / totalOdds;
-        spainLiquidity = (baseLiquidity * uint256(spainOdds)) / totalOdds;
-        drawLiquidity = (baseLiquidity * uint256(drawOdds)) / totalOdds;
+        // Normalize the odds to 60.18 decimal fixed-point format
+        uint256 englandOddsScaled = (uint256(englandOdds) * UNIT) / totalOdds;
+        uint256 spainOddsScaled = (uint256(spainOdds) * UNIT) / totalOdds;
+        uint256 drawOddsScaled = (uint256(drawOdds) * UNIT) / totalOdds;
+
+        // Calculate the active bin IDs based on the normalized odds
+        englandBin = (getActiveIdFromPrice(englandOddsScaled));
+        spainBin = (getActiveIdFromPrice(spainOddsScaled));
+        drawBin = (getActiveIdFromPrice(drawOddsScaled));
     }
 }

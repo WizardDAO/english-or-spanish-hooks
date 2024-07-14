@@ -17,8 +17,12 @@ import {IBinFungiblePositionManager} from "@pancakeswap/v4-periphery/src/pool-bi
 import {EnglishOrSpanish} from "../src/EnglishOrSpanish.sol";
 import {MockOracle} from "../src/MockOracle.sol";
 import {PredictionPoolHook} from "../src/PredictionPoolHook.sol";
+import {PoolIdLibrary} from "@pancakeswap/v4-core/src/types/PoolId.sol";
+import {PoolId} from "@pancakeswap/v4-core/src/types/PoolId.sol";
 
 contract DeployScript is Script {
+    using PoolIdLibrary for PoolKey;
+
     Vault vault;
     BinPoolManager poolManager;
     BinFungiblePositionManager positionManager;
@@ -38,6 +42,10 @@ contract DeployScript is Script {
 
     function setUp() public {}
 
+    function getPoolId(PoolKey memory _poolKey) internal view returns (PoolId) {
+        return _poolKey.toId();
+    }
+
     function run() public {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         vm.startBroadcast(deployerPrivateKey);
@@ -56,20 +64,11 @@ contract DeployScript is Script {
         MockERC20 ERC20_DRAW = new MockERC20("DRAW", "DRAW", 18);
         MockERC20 ERC20_USDC = new MockERC20("USDC", "USDC", 18);
 
-        console.log("Vault deployed at:", address(vault));
-        console.log("BinPoolManager deployed at:", address(poolManager));
-        console.log("BinFungiblePositionManager deployed at:", address(positionManager));
-        console.log("BinSwapRouter deployed at:", address(swapRouter));
-        console.log("ERC20_SPAIN deployed at:", address(ERC20_SPAIN));
-        console.log("ERC20_ENGLAND deployed at:", address(ERC20_ENGLAND));
-        console.log("ERC20_DRAW deployed at:", address(ERC20_DRAW));
-        console.log("ERC20_USDC deployed at:", address(ERC20_USDC));
-
         // Deploy MockOracle
         oracle = new MockOracle();
 
         // Deploy PredictionPoolHook
-        predictionPoolHook = new PredictionPoolHook();
+        predictionPoolHook = new PredictionPoolHook(poolManager, oracle, englishOrSpanish);
 
         // Deploy EnglishOrSpanish
         englishOrSpanish = new EnglishOrSpanish(
@@ -79,7 +78,8 @@ contract DeployScript is Script {
             ERC20_DRAW,
             ERC20_USDC,
             positionManager,
-            address(predictionPoolHook)
+            poolManager,
+            predictionPoolHook
         );
 
         console.log("Approving Tokens...");
@@ -94,6 +94,20 @@ contract DeployScript is Script {
         console.log("All tokens approved to positionManager and swapRouter");
 
         // Add liquidity
+        console.log("Initializing pools...");
+        englishOrSpanish.initializePools();
+
+        console.log("Vault deployed at:", address(vault));
+        console.log("BinPoolManager deployed at:", address(poolManager));
+        console.log("BinFungiblePositionManager deployed at:", address(positionManager));
+        console.log("BinSwapRouter deployed at:", address(swapRouter));
+        console.log("ERC20_SPAIN deployed at:", address(ERC20_SPAIN));
+        console.log("ERC20_ENGLAND deployed at:", address(ERC20_ENGLAND));
+        console.log("ERC20_DRAW deployed at:", address(ERC20_DRAW));
+        console.log("ERC20_USDC deployed at:", address(ERC20_USDC));
+        console.log("MockOracle deployed at:", address(oracle));
+        console.log("EnglishOrSpanish deployed at:", address(englishOrSpanish));
+        console.log("PredictionPoolHook deployed at:", address(predictionPoolHook));
 
         vm.stopBroadcast();
     }

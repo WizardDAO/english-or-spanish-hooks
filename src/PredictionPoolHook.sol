@@ -12,7 +12,7 @@ import {ImpliedOddsHelper} from "./ImpliedOddsHelper.sol";
 import {EnglishOrSpanish} from "./EnglishOrSpanish.sol";
 
 /// @notice PredictionMarketHook dynamically adjusts market based on oracle data
-contract PredictionMarketHook is BinBaseHook {
+contract PredictionPoolHook is BinBaseHook {
     using PoolIdLibrary for PoolKey;
 
     MockOracle public oracle;
@@ -44,18 +44,13 @@ contract PredictionMarketHook is BinBaseHook {
                     afterSwap: false,
                     beforeDonate: false,
                     afterDonate: false,
-                    beforeSwapReturnsDelta: true,
+                    beforeSwapReturnsDelta: false,
                     afterSwapReturnsDelta: false,
                     afterMintReturnsDelta: false,
                     afterBurnReturnsDelta: false
                 })
             );
     }
-
-    function adjustLiquidity() internal {}
-
-    // Redistribute liquidity for specified pool
-    function redistributeLiquidity(string memory outcome, uint256 newProbability) internal {}
 
     function beforeSwap(
         address,
@@ -68,17 +63,5 @@ contract PredictionMarketHook is BinBaseHook {
         englishOrSpanish.rebalanceAllPools();
 
         return (this.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
-    }
-
-    function afterSwap(
-        address,
-        PoolKey calldata key,
-        bool,
-        int128,
-        BalanceDelta,
-        bytes calldata
-    ) external override poolManagerOnly returns (bytes4, int128) {
-        afterSwapCount[key.toId()]++;
-        return (this.afterSwap.selector, 0);
     }
 }
